@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: kafka
+    hostname: kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"  # PLAINTEXT (можно отключить)
+      - "9093:9093"  # SASL_PLAINTEXT для клиентов
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - ./data:/var/lib/kafka/data
+      - ./config/server.properties:/opt/kafka/config/kraft/server.properties:ro
+      - ./config/jaas-kafka.conf:/opt/kafka/config/jaas-kafka.conf:ro
+      - ./config/client-admin.properties:/opt/kafka/config/client-admin.properties:ro
+      - ./config/client-alice.properties:/opt/kafka/config/client-alice.properties:ro
+      - ./config/client-bob.properties:/opt/kafka/config/client-bob.properties:ro
+      - ./config/client-charlie.properties:/opt/kafka/config/client-charlie.properties:ro
+    command: >
+      bash -lc '
+      set -euo pipefail;
+      export KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka/config/jaas-kafka.conf";
+      if [ ! -f /var/lib/kafka/data/meta.properties ]; then
+        CLUSTER_ID=$(/opt/kafka/bin/kafka-storage.sh random-uuid);
+        echo "Formatting KRaft storage with CLUSTER_ID=$CLUSTER_ID";
+        /opt/kafka/bin/kafka-storage.sh format -t "$CLUSTER_ID" -c /opt/kafka/config/kraft/server.properties --ignore-formatted;
+      else
+        echo "KRaft storage already formatted, skipping.";
+      fi;
+      exec /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/kraft/server.properties
+      '
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc '/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9093 --list --command-config /opt/kafka/config/client-admin.properties >/dev/null 2>&1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
