@@ -10,7 +10,7 @@
 - `config/server.properties`
   - Базовая конфигурация одноузлового KRaft-брокера и контроллера.
   - Критичные параметры:
-    - `controller.listener.names=CONTROLLER` — **без комментариев** на строке.
+    - `controller.listener.names=CONTROLLER`
     - `listeners=PLAINTEXT://:9092,SASL_PLAINTEXT://:9093,CONTROLLER://:9094`
     - `advertised.listeners=PLAINTEXT://kafka:9092,SASL_PLAINTEXT://kafka:9093`
     - `listener.security.protocol.map=PLAINTEXT:PLAINTEXT,SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT`
