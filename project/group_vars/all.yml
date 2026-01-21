@@ -111,4 +111,5 @@ zookeeper_config:
 # Версионирование конфигурации
 config_version: "1.0.0"
 config_backup_enabled: true
-config_backup_path: "./config_backups"
+# Путь будет вычисляться относительно playbook_dir автоматически
+# config_backup_path: "{{ playbook_dir }}/../config_backups"

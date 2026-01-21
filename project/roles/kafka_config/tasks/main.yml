@@ -3,7 +3,7 @@
 
 - name: Создание директории для бэкапов конфигурации
   file:
-    path: "{{ config_backup_path | default('./config_backups') }}"
+    path: "{{ config_backup_path | default(playbook_dir + '/../config_backups') }}"
     state: directory
   delegate_to: localhost
   run_once: true
@@ -23,21 +23,40 @@
 - name: Сохранение текущей конфигурации в бэкап
   copy:
     content: "{{ current_config.stdout }}"
-    dest: "{{ config_backup_path | default('./config_backups') }}/broker-{{ kafka_broker_id }}-{{ ansible_date_time.epoch }}.backup"
+    dest: "{{ config_backup_path | default(playbook_dir + '/../config_backups') }}/broker-{{ kafka_broker_id }}-{{ ansible_date_time.epoch }}.backup"
   delegate_to: localhost
   when: config_backup_enabled | default(true)
 
-- name: Применение новой конфигурации брокера
+- name: Фильтрация динамически изменяемых параметров
+  set_fact:
+    dynamic_config: "{{ kafka_broker_config | dict2items | selectattr('key', 'match', '^(log\\.retention|log\\.segment|log\\.cleaner|log\\.flush|compression|unclean)') | map(attribute='key') | list }}"
+  when: kafka_broker_config is defined
+
+- name: Применение новой конфигурации брокера (только динамически изменяемые параметры)
   command: >
     docker exec {{ kafka_container }} kafka-configs
     --bootstrap-server {{ kafka_internal_bootstrap }}
     --entity-type brokers
     --entity-name {{ kafka_broker_id }}
     --alter
-    --add-config {{ kafka_broker_config | dict2items | map('join', '=') | join(',') }}
+    --add-config {{ kafka_broker_config | dict2items | selectattr('key', 'match', '^(log\\.retention|log\\.segment|log\\.cleaner|log\\.flush|compression|unclean)') | map('join', '=') | join(',') }}
   delegate_to: localhost
   register: config_applied
-  when: kafka_broker_config is defined
+  when: 
+    - kafka_broker_config is defined
+    - dynamic_config | length > 0
+  failed_when: false
+  changed_when: config_applied.rc == 0
+
+- name: Предупреждение о статических параметрах
+  debug:
+    msg: |
+      Некоторые параметры (num.network.threads, num.io.threads, socket.*) требуют перезапуска брокера.
+      Они не могут быть изменены динамически через kafka-configs.
+      Для их изменения отредактируйте config/kafka/server.properties и перезапустите брокер.
+  when:
+    - kafka_broker_config is defined
+    - kafka_broker_config | dict2items | selectattr('key', 'match', '^(num\\.|socket\\.)') | list | length > 0
 
 - name: Получение обновленной конфигурации брокера
   command: >
@@ -53,8 +72,17 @@
 
 - name: Вывод информации об измененной конфигурации
   debug:
-    msg: "Конфигурация брокера {{ kafka_broker_id }} обновлена"
-  when: config_applied.changed | default(false)
+    msg: |
+      Конфигурация брокера {{ kafka_broker_id }}:
+      {% if config_applied.changed %}
+      ✓ Динамические параметры применены успешно
+      {% elif config_applied.rc != 0 %}
+      ⚠ Большинство параметров требуют перезапуска брокера
+      Версионирование и бэкапы созданы для отслеживания изменений
+      {% else %}
+      Конфигурация уже применена или параметры требуют перезапуска
+      {% endif %}
+  when: config_applied is defined
 
 - name: Сохранение версии конфигурации
   copy:
@@ -63,6 +91,6 @@
       broker_id: {{ kafka_broker_id }}
       timestamp: {{ ansible_date_time.iso8601 }}
       config: {{ kafka_broker_config | to_nice_json }}
-    dest: "{{ config_backup_path | default('./config_backups') }}/broker-{{ kafka_broker_id }}-version-{{ config_version | default('1.0.0') }}.yml"
+    dest: "{{ config_backup_path | default(playbook_dir + '/../config_backups') }}/broker-{{ kafka_broker_id }}-version-{{ config_version | default('1.0.0') }}.yml"
   delegate_to: localhost
   when: config_applied.changed | default(false)
