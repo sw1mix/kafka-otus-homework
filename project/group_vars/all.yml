@@ -57,6 +57,9 @@ kafka_users:
   - username: "operator"
     password: "operator-secret-password"
     mechanism: "SCRAM-SHA-512"
+  - username: "operator2"
+    password: "operator-secret-password"
+    mechanism: "SCRAM-SHA-512"
 
 # Управление ACL
 kafka_acls:
