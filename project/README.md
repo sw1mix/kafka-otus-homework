@@ -29,10 +29,12 @@ project/
 │       └── server.properties
 └── scripts/                     # Скрипты для тестирования
     ├── setup.sh
-    ├── test-all.sh
-    ├── test-cluster.sh
-    ├── test-topics.sh
-    └── test-config.sh
+    ├── run-ansible.sh
+    ├── test-complete.sh         # Полное тестирование всех задач
+    ├── test-task1-topics.sh     # Тест задачи 1: Управление топиками
+    ├── test-task2-acl.sh        # Тест задачи 2: Управление ACL/SASL
+    ├── test-task3-scaling.sh    # Тест задачи 3: Масштабирование
+    └── test-task4-config.sh     # Тест задачи 4: Управление конфигурацией
 ```
 
 ## Требования
@@ -93,13 +95,14 @@ ansible-playbook playbooks/manage-config.yml
 ### 4. Тестирование
 
 ```bash
-# Полное тестирование
-./scripts/test-all.sh
+# Полное тестирование всех задач
+./scripts/test-complete.sh
 
-# Или отдельные тесты:
-./scripts/test-cluster.sh
-./scripts/test-topics.sh
-./scripts/test-config.sh
+# Или отдельные задачи:
+./scripts/test-task1-topics.sh      # Задача 1: Управление топиками
+./scripts/test-task2-acl.sh         # Задача 2: Управление ACL/SASL
+./scripts/test-task3-scaling.sh     # Задача 3: Масштабирование кластера
+./scripts/test-task4-config.sh      # Задача 4: Управление конфигурацией
 ```
 
 ## Функционал
