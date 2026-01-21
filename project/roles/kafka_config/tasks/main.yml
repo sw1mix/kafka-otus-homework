@@ -1,0 +1,68 @@
+---
+# Роль для управления конфигурацией брокеров Kafka
+
+- name: Создание директории для бэкапов конфигурации
+  file:
+    path: "{{ config_backup_path | default('./config_backups') }}"
+    state: directory
+  delegate_to: localhost
+  run_once: true
+  when: config_backup_enabled | default(true)
+
+- name: Получение текущей конфигурации брокера
+  command: >
+    docker exec {{ kafka_container }} kafka-configs
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --entity-type brokers
+    --entity-name {{ kafka_broker_id }}
+    --describe
+  register: current_config
+  changed_when: false
+  delegate_to: localhost
+
+- name: Сохранение текущей конфигурации в бэкап
+  copy:
+    content: "{{ current_config.stdout }}"
+    dest: "{{ config_backup_path | default('./config_backups') }}/broker-{{ kafka_broker_id }}-{{ ansible_date_time.epoch }}.backup"
+  delegate_to: localhost
+  when: config_backup_enabled | default(true)
+
+- name: Применение новой конфигурации брокера
+  command: >
+    docker exec {{ kafka_container }} kafka-configs
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --entity-type brokers
+    --entity-name {{ kafka_broker_id }}
+    --alter
+    --add-config {{ kafka_broker_config | dict2items | map('join', '=') | join(',') }}
+  delegate_to: localhost
+  register: config_applied
+  when: kafka_broker_config is defined
+
+- name: Получение обновленной конфигурации брокера
+  command: >
+    docker exec {{ kafka_container }} kafka-configs
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --entity-type brokers
+    --entity-name {{ kafka_broker_id }}
+    --describe
+  register: updated_config
+  changed_when: false
+  delegate_to: localhost
+  when: config_applied.changed | default(false)
+
+- name: Вывод информации об измененной конфигурации
+  debug:
+    msg: "Конфигурация брокера {{ kafka_broker_id }} обновлена"
+  when: config_applied.changed | default(false)
+
+- name: Сохранение версии конфигурации
+  copy:
+    content: |
+      version: {{ config_version | default('1.0.0') }}
+      broker_id: {{ kafka_broker_id }}
+      timestamp: {{ ansible_date_time.iso8601 }}
+      config: {{ kafka_broker_config | to_nice_json }}
+    dest: "{{ config_backup_path | default('./config_backups') }}/broker-{{ kafka_broker_id }}-version-{{ config_version | default('1.0.0') }}.yml"
+  delegate_to: localhost
+  when: config_applied.changed | default(false)

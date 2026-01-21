@@ -1,0 +1,15 @@
+---
+# Playbook для отката конфигурации брокеров Kafka
+# Использование: ansible-playbook playbooks/rollback-config.yml
+
+- name: Откат конфигурации брокеров Kafka
+  hosts: kafka_cluster
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Включение задач отката конфигурации
+      include_role:
+        name: kafka_config
+        tasks_from: rollback

@@ -1,0 +1,15 @@
+---
+# Playbook для управления топиками Kafka
+# Использование: ansible-playbook playbooks/manage-topics.yml
+
+- name: Управление топиками Kafka
+  hosts: kafka_cluster
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Включение роли управления топиками
+      include_role:
+        name: kafka_topics
+      run_once: true

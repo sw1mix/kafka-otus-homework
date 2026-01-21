@@ -1,0 +1,114 @@
+---
+# Общие переменные для всего кластера Kafka
+
+# Настройки подключения
+kafka_bootstrap_servers: "localhost:19092,localhost:19093,localhost:19094"
+kafka_internal_bootstrap: "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+zookeeper_connect: "localhost:2181"
+
+# Пути
+kafka_config_path: "/etc/kafka/server.properties"
+kafka_bin_path: "/usr/bin"
+docker_compose_path: "{{ playbook_dir }}/../docker-compose.yml"
+
+# Настройки по умолчанию для топиков
+kafka_default_replication_factor: 3
+kafka_default_partitions: 3
+kafka_default_min_insync_replicas: 2
+
+# Управление топиками
+kafka_topics:
+  - name: "test-topic-1"
+    partitions: 3
+    replication_factor: 3
+    config:
+      retention.ms: "604800000"  # 7 дней
+      cleanup.policy: "delete"
+      compression.type: "snappy"
+      min.insync.replicas: "2"
+  - name: "test-topic-2"
+    partitions: 6
+    replication_factor: 3
+    config:
+      retention.ms: "86400000"  # 1 день
+      cleanup.policy: "compact"
+      compression.type: "lz4"
+      min.insync.replicas: "2"
+  - name: "events"
+    partitions: 12
+    replication_factor: 3
+    config:
+      retention.ms: "2592000000"  # 30 дней
+      cleanup.policy: "delete"
+      compression.type: "gzip"
+      min.insync.replicas: "2"
+
+# Управление пользователями SASL/SCRAM
+kafka_users:
+  - username: "admin"
+    password: "admin-secret-password"
+    mechanism: "SCRAM-SHA-512"
+  - username: "producer"
+    password: "producer-secret-password"
+    mechanism: "SCRAM-SHA-512"
+  - username: "consumer"
+    password: "consumer-secret-password"
+    mechanism: "SCRAM-SHA-512"
+  - username: "operator"
+    password: "operator-secret-password"
+    mechanism: "SCRAM-SHA-512"
+
+# Управление ACL
+kafka_acls:
+  - principal: "User:admin"
+    resource_type: "Topic"
+    resource_name: "*"
+    operation: "All"
+    permission: "Allow"
+  - principal: "User:producer"
+    resource_type: "Topic"
+    resource_name: "test-topic-1"
+    operation: "Write"
+    permission: "Allow"
+  - principal: "User:producer"
+    resource_type: "Topic"
+    resource_name: "test-topic-1"
+    operation: "Create"
+    permission: "Allow"
+  - principal: "User:consumer"
+    resource_type: "Topic"
+    resource_name: "test-topic-1"
+    operation: "Read"
+    permission: "Allow"
+  - principal: "User:consumer"
+    resource_type: "Group"
+    resource_name: "consumer-group-1"
+    operation: "Read"
+    permission: "Allow"
+  - principal: "User:operator"
+    resource_type: "Cluster"
+    resource_name: "kafka-cluster"
+    operation: "Alter"
+    permission: "Allow"
+
+# Конфигурация брокеров
+kafka_broker_config:
+  log.retention.hours: "168"
+  log.segment.bytes: "1073741824"
+  log.retention.check.interval.ms: "300000"
+  num.network.threads: "8"
+  num.io.threads: "8"
+  socket.send.buffer.bytes: "102400"
+  socket.receive.buffer.bytes: "102400"
+
+# Конфигурация Zookeeper
+zookeeper_config:
+  tickTime: "2000"
+  initLimit: "10"
+  syncLimit: "5"
+  maxClientCnxns: "60"
+
+# Версионирование конфигурации
+config_version: "1.0.0"
+config_backup_enabled: true
+config_backup_path: "./config_backups"

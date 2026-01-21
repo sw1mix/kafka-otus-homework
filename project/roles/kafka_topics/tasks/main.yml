@@ -1,0 +1,134 @@
+---
+# Роль для управления топиками Kafka
+
+- name: Проверка доступности Kafka
+  command: docker exec {{ kafka_container }} kafka-topics --bootstrap-server {{ kafka_internal_bootstrap }} --list
+  register: kafka_check
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Получение списка существующих топиков
+  command: docker exec {{ kafka_container }} kafka-topics --bootstrap-server {{ kafka_internal_bootstrap }} --list
+  register: existing_topics
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Установка факта существующих топиков
+  set_fact:
+    existing_topics_list: "{{ existing_topics.stdout_lines | default([]) }}"
+  run_once: true
+
+- name: Создание топиков
+  command: >
+    docker exec {{ kafka_container }} kafka-topics
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --create
+    --if-not-exists
+    --topic {{ item.name }}
+    --partitions {{ item.partitions | default(kafka_default_partitions) }}
+    --replication-factor {{ item.replication_factor | default(kafka_default_replication_factor) }}
+    --config retention.ms={{ item.config.retention.ms | default('604800000') }}
+    --config cleanup.policy={{ item.config.cleanup.policy | default('delete') }}
+    --config compression.type={{ item.config.compression.type | default('uncompressed') }}
+    --config min.insync.replicas={{ item.config['min.insync.replicas'] | default(kafka_default_min_insync_replicas) }}
+  loop: "{{ kafka_topics }}"
+  when: item.name not in existing_topics_list
+  delegate_to: localhost
+  run_once: true
+  register: topics_created
+
+- name: Обновление конфигурации существующих топиков
+  command: >
+    docker exec {{ kafka_container }} kafka-configs
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --entity-type topics
+    --entity-name {{ item.name }}
+    --alter
+    --add-config retention.ms={{ item.config.retention.ms | default('604800000') }},cleanup.policy={{ item.config.cleanup.policy | default('delete') }},compression.type={{ item.config.compression.type | default('uncompressed') }},min.insync.replicas={{ item.config['min.insync.replicas'] | default(kafka_default_min_insync_replicas) }}
+  loop: "{{ kafka_topics }}"
+  when: item.name in existing_topics_list
+  delegate_to: localhost
+  run_once: true
+  register: topics_updated
+
+- name: Получение информации о партициях существующих топиков
+  command: >
+    docker exec {{ kafka_container }} kafka-topics
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --describe
+    --topic {{ item }}
+  loop: "{{ existing_topics_list }}"
+  register: topics_info
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+  when: existing_topics_list | length > 0
+
+- name: Парсинг количества партиций из описания топиков
+  set_fact:
+    existing_partitions: "{{ existing_partitions | default({}) | combine({item.item: (item.stdout | regex_findall('PartitionCount:\\s*(\\d+)') | first | default('0') | int)}) }}"
+  loop: "{{ topics_info.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: 
+    - topics_info is defined
+    - item.stdout is defined
+  run_once: true
+
+- name: Увеличение количества партиций для существующих топиков
+  set_fact:
+    current_partitions: "{{ existing_partitions.get(item.name, 0) | int }}"
+    target_partitions: "{{ item.partitions | default(kafka_default_partitions) | int }}"
+  loop: "{{ kafka_topics }}"
+  when: 
+    - item.name in existing_topics_list
+  run_once: true
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Увеличение количества партиций (выполнение)
+  command: >
+    docker exec {{ kafka_container }} kafka-topics
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --alter
+    --topic {{ item.name }}
+    --partitions {{ item.partitions | default(kafka_default_partitions) }}
+  loop: "{{ kafka_topics }}"
+  when: 
+    - item.name in existing_topics_list
+    - item.partitions | default(kafka_default_partitions) | int > (existing_partitions.get(item.name, 0) | int)
+  delegate_to: localhost
+  run_once: true
+  register: topics_partitions_updated
+  failed_when: false
+
+- name: Удаление топиков (если указано в переменной kafka_topics_to_delete)
+  command: >
+    docker exec {{ kafka_container }} kafka-topics
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --delete
+    --topic {{ item }}
+  loop: "{{ kafka_topics_to_delete | default([]) }}"
+  when: kafka_topics_to_delete is defined
+  delegate_to: localhost
+  run_once: true
+  register: topics_deleted
+
+- name: Вывод информации о созданных топиках
+  debug:
+    msg: "Создан топик: {{ item.item.name }}"
+  loop: "{{ topics_created.results | default([]) }}"
+  when: 
+    - topics_created is defined
+    - item.changed | default(false)
+
+- name: Вывод информации об обновленных топиках
+  debug:
+    msg: "Обновлен топик: {{ item.item.name }}"
+  loop: "{{ topics_updated.results | default([]) }}"
+  when: 
+    - topics_updated is defined
+    - item.changed | default(false)

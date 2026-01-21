@@ -1,0 +1,36 @@
+---
+# Задачи для ребалансировки партиций при масштабировании
+
+- name: Генерация плана ребалансировки
+  command: >
+    docker exec {{ kafka_container }} kafka-reassign-partitions
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --generate
+    --topics-to-move-json-file /tmp/topics-to-move.json
+    --broker-list {{ kafka_target_broker_list }}
+  register: rebalance_plan
+  delegate_to: localhost
+  run_once: true
+  vars:
+    kafka_target_broker_list: "{{ kafka_target_brokers | join(',') }}"
+
+- name: Применение плана ребалансировки
+  command: >
+    docker exec {{ kafka_container }} kafka-reassign-partitions
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --execute
+    --reassignment-json-file /tmp/reassignment-plan.json
+  delegate_to: localhost
+  run_once: true
+  when: kafka_apply_rebalance | default(false)
+
+- name: Проверка статуса ребалансировки
+  command: >
+    docker exec {{ kafka_container }} kafka-reassign-partitions
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --verify
+    --reassignment-json-file /tmp/reassignment-plan.json
+  register: rebalance_status
+  delegate_to: localhost
+  run_once: true
+  when: kafka_apply_rebalance | default(false)

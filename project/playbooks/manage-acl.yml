@@ -1,0 +1,15 @@
+---
+# Playbook для управления ACL и SASL пользователями Kafka
+# Использование: ansible-playbook playbooks/manage-acl.yml
+
+- name: Управление ACL и SASL пользователями Kafka
+  hosts: kafka_cluster
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Включение роли управления ACL
+      include_role:
+        name: kafka_acl
+      run_once: true

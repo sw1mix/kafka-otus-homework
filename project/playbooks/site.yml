@@ -1,0 +1,38 @@
+---
+# Главный playbook для полного развертывания и настройки Kafka
+# Использование: ansible-playbook playbooks/site.yml
+
+- name: Полное развертывание и настройка Kafka кластера
+  hosts: kafka_cluster
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Управление конфигурацией брокеров
+      include_role:
+        name: kafka_config
+
+- name: Управление топиками
+  hosts: kafka_cluster
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Включение роли управления топиками
+      include_role:
+        name: kafka_topics
+      run_once: true
+
+- name: Управление ACL и SASL
+  hosts: kafka_cluster
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Включение роли управления ACL
+      include_role:
+        name: kafka_acl
+      run_once: true

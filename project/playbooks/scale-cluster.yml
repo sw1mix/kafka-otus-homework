@@ -1,0 +1,18 @@
+---
+# Playbook для масштабирования кластера Kafka
+# Использование: 
+#   ansible-playbook playbooks/scale-cluster.yml -e "kafka_target_brokers=['1','2','3','4']"
+#   ansible-playbook playbooks/scale-cluster.yml -e "kafka_target_brokers=['1','2']" -e "kafka_force_remove_brokers=true"
+
+- name: Масштабирование кластера Kafka
+  hosts: localhost
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Включение роли масштабирования кластера
+      include_role:
+        name: kafka_scaling
+      vars:
+        kafka_target_brokers: "{{ kafka_target_brokers | default(['1','2','3']) }}"

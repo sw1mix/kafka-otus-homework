@@ -1,0 +1,14 @@
+---
+# Playbook для управления конфигурацией брокеров Kafka
+# Использование: ansible-playbook playbooks/manage-config.yml
+
+- name: Управление конфигурацией брокеров Kafka
+  hosts: kafka_cluster
+  gather_facts: yes
+  become: no
+  vars_files:
+    - ../group_vars/all.yml
+  tasks:
+    - name: Включение роли управления конфигурацией
+      include_role:
+        name: kafka_config

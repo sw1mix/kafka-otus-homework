@@ -1,0 +1,96 @@
+---
+# Роль для управления ACL и SASL пользователями Kafka
+
+- name: Проверка доступности Kafka
+  command: docker exec {{ kafka_container }} kafka-topics --bootstrap-server {{ kafka_internal_bootstrap }} --list
+  register: kafka_check
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Получение списка существующих пользователей SASL
+  command: >
+    docker exec {{ kafka_container }} kafka-configs
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --entity-type users
+    --entity-default
+    --describe
+    --command-config /tmp/client.properties 2>/dev/null || echo ""
+  register: existing_users_raw
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+  failed_when: false
+  vars:
+    # В текущей конфигурации SASL не включен, поэтому пропускаем создание пользователей
+    # Это будет работать только если Kafka настроен с SASL
+
+- name: Создание пользователей SASL/SCRAM (если включен SASL)
+  command: >
+    docker exec {{ kafka_container }} kafka-configs
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --entity-type users
+    --entity-name {{ item.username }}
+    --alter
+    --add-config 'SCRAM-SHA-512=[password={{ item.password }}]'
+  loop: "{{ kafka_users | default([]) }}"
+  when: kafka_sasl_enabled | default(false)
+  delegate_to: localhost
+  run_once: true
+  register: users_created
+  failed_when: false
+  changed_when: users_created.rc == 0
+
+- name: Получение текущих ACL
+  command: >
+    docker exec {{ kafka_container }} kafka-acls
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --list
+  register: existing_acls
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+  failed_when: false
+
+- name: Установка ACL правил
+  command: >
+    docker exec {{ kafka_container }} kafka-acls
+    --bootstrap-server {{ kafka_internal_bootstrap }}
+    --add
+    --allow-principal {{ item.principal }}
+    --{{ item.resource_type | lower }}-pattern {{ item.resource_name }}
+    --operation {{ item.operation }}
+    --command-config /tmp/client.properties 2>/dev/null || true
+  loop: "{{ kafka_acls | default([]) }}"
+  delegate_to: localhost
+  run_once: true
+  register: acls_set
+  failed_when: false
+  changed_when: acls_set.rc == 0
+  vars:
+    # В текущей конфигурации без SASL ACL могут не работать
+    # Это будет работать только если Kafka настроен с ACL
+
+- name: Вывод информации о созданных пользователях
+  debug:
+    msg: "Создан пользователь: {{ item.item.username }}"
+  loop: "{{ users_created.results | default([]) }}"
+  when: 
+    - users_created is defined
+    - item.changed | default(false)
+
+- name: Вывод информации об установленных ACL
+  debug:
+    msg: "Установлено ACL: {{ item.item.principal }} -> {{ item.item.resource_type }}/{{ item.item.resource_name }}"
+  loop: "{{ acls_set.results | default([]) }}"
+  when: 
+    - acls_set is defined
+    - item.changed | default(false)
+
+- name: Примечание о SASL/ACL
+  debug:
+    msg: |
+      ВНИМАНИЕ: Управление SASL/ACL требует настройки Kafka с включенным SASL и ACL.
+      В текущей конфигурации (PLAINTEXT) эти функции не активны.
+      Для полной функциональности необходимо настроить SASL_PLAINTEXT или SASL_SSL.

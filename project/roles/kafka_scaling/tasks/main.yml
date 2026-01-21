@@ -1,0 +1,110 @@
+---
+# Роль для масштабирования кластера Kafka
+
+- name: Проверка текущего состояния кластера
+  command: docker ps --filter "name=kafka-" --format "{{ '{{' }}.Names{{ '}}' }}"
+  register: running_brokers
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Установка факта текущих брокеров
+  set_fact:
+    current_broker_ids: "{{ running_brokers.stdout_lines | default([]) | map('regex_replace', '^kafka-', '') | list }}"
+  run_once: true
+
+- name: Определение брокеров для добавления
+  set_fact:
+    brokers_to_add: "{{ kafka_target_brokers | default([]) | difference(current_broker_ids | default([])) }}"
+  run_once: true
+  when: kafka_target_brokers is defined
+
+- name: Определение брокеров для удаления
+  set_fact:
+    brokers_to_remove: "{{ current_broker_ids | default([]) | difference(kafka_target_brokers | default([])) }}"
+  run_once: true
+  when: kafka_target_brokers is defined
+
+- name: Добавление новых брокеров
+  command: >
+    docker-compose -f {{ docker_compose_path }} up -d kafka-{{ item }}
+  loop: "{{ brokers_to_add | default([]) }}"
+  delegate_to: localhost
+  run_once: true
+  register: brokers_added
+  when: brokers_to_add | length > 0
+
+- name: Ожидание готовности новых брокеров
+  wait_for:
+    host: localhost
+    port: "{{ 19091 + item | int }}"
+    delay: 5
+    timeout: 60
+  loop: "{{ brokers_to_add | default([]) }}"
+  when: brokers_to_add | length > 0
+  delegate_to: localhost
+  run_once: true
+
+- name: Проверка подключения новых брокеров
+  command: >
+    docker exec kafka-{{ item }} kafka-broker-api-versions
+    --bootstrap-server localhost:9092
+  loop: "{{ brokers_to_add | default([]) }}"
+  register: broker_check
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+  when: brokers_to_add | length > 0
+
+- name: Вывод информации о добавленных брокерах
+  debug:
+    msg: "Добавлен брокер: kafka-{{ item }}"
+  loop: "{{ brokers_to_add | default([]) }}"
+  when: brokers_to_add | length > 0
+
+- name: Предупреждение о ребалансировке перед удалением
+  debug:
+    msg: |
+      ВНИМАНИЕ: Перед удалением брокеров необходимо выполнить ребалансировку данных.
+      Используйте kafka-reassign-partitions для перемещения партиций с удаляемых брокеров.
+  when: brokers_to_remove | length > 0
+
+- name: Удаление брокеров (только после ребалансировки)
+  command: >
+    docker-compose -f {{ docker_compose_path }} stop kafka-{{ item }}
+  loop: "{{ brokers_to_remove | default([]) }}"
+  delegate_to: localhost
+  run_once: true
+  register: brokers_stopped
+  when: 
+    - brokers_to_remove | length > 0
+    - kafka_force_remove_brokers | default(false)
+
+- name: Удаление контейнеров брокеров
+  command: >
+    docker-compose -f {{ docker_compose_path }} rm -f kafka-{{ item }}
+  loop: "{{ brokers_to_remove | default([]) }}"
+  delegate_to: localhost
+  run_once: true
+  when: 
+    - brokers_to_remove | length > 0
+    - kafka_force_remove_brokers | default(false)
+
+- name: Вывод информации об удаленных брокерах
+  debug:
+    msg: "Удален брокер: kafka-{{ item }}"
+  loop: "{{ brokers_to_remove | default([]) }}"
+  when: 
+    - brokers_to_remove | length > 0
+    - kafka_force_remove_brokers | default(false)
+
+- name: Получение информации о текущем состоянии кластера
+  command: docker ps --filter "name=kafka-" --format "{{ '{{' }}.Names{{ '}}' }}: {{ '{{' }}.Status{{ '}}' }}"
+  register: cluster_status
+  changed_when: false
+  delegate_to: localhost
+  run_once: true
+
+- name: Вывод статуса кластера
+  debug:
+    msg: "{{ cluster_status.stdout_lines }}"
